@@ -60,7 +60,7 @@ class VMRunCLI(object):
         # [optional absolute path to VMX 1]
         # [optional absolute path to VMX 2]
         # [optional absolute path to VMX n]
-        data = {}
+        data = dict()
         data['count'] = int(output[0].split(':')[1].strip())
         data['machines'] = [vmx.strip() for vmx in output[1:]]
 
