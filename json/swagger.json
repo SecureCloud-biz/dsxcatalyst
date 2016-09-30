@@ -1,0 +1,557 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "version": "1.0.0",
+        "title": "VMware AppCatalyst",
+        "description": "REST API for VMware AppCatalyst",
+        "termsOfService": "http://www.vmware.com/go/communities-appcatalyst",
+        "contact": {
+            "name": "VMware AppCatalyst team",
+            "url": "http://www.vmware.com/go/communities-appcatalyst"
+        }
+    },
+    "host": "localhost:8080",
+    "basePath": "/api",
+    "schemes": [
+        "http"
+    ],
+    "consumes": [
+        "application/json"
+    ],
+    "produces": [
+        "application/json"
+    ],
+    "paths": {
+        "/vms": {
+            "get": {
+                "description": "Get all VMs IDs",
+                "operationId": "findVMs",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "tags",
+                        "in": "query",
+                        "description": "tags to filter by",
+                        "required": false,
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM IDs",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new VM",
+                "operationId": "createVM",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "params",
+                        "in": "body",
+                        "description": "VM creation parameters",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/createVM"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM response",
+                        "schema": {
+                            "$ref": "#/definitions/vm"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{id}": {
+            "get": {
+                "description": "Returns a VM based on a single ID",
+                "operationId": "findVMById",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM response",
+                        "schema": {
+                            "$ref": "#/definitions/vm"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "deletes a VM based on the ID supplied",
+                "operationId": "deleteVM",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM to delete",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "VM deleted"
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/power/{id}": {
+            "get": {
+                "description": "Returns VM power state",
+                "operationId": "getVMPowerState",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM power state",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Change VM power state",
+                "operationId": "patchVMPowerState",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "op",
+                        "in": "body",
+                        "description": "VM power operation: on, off, shutdown, suspend, pause, unpause",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM power state",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{id}/folders": {
+            "get": {
+                "description": "Returns VM shared folder IDs",
+                "operationId": "getVMSharedFolderIDs",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM shared folder IDs",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Enable or disable shared VM folders",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "enabled",
+                        "in": "body",
+                        "description": "Enable or disable shared VM folders",
+                        "required": true,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Enable response"
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add VM shared folder",
+                "operationId": "addVMSharedFolderState",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "state",
+                        "in": "body",
+                        "description": "Shared folder state",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/folderState"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM shared folder state",
+                        "schema": {
+                            "$ref": "#/definitions/folderState"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{id}/folders/{folderId}": {
+            "get": {
+                "description": "Returns VM shared folder state",
+                "operationId": "getVMSharedFolderState",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "folderId",
+                        "in": "path",
+                        "description": "Shared folder ID",
+                        "required": true,
+                        "type": "integer"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM shared folder state",
+                        "schema": {
+                            "$ref": "#/definitions/folderState"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Set VM shared folder state",
+                "operationId": "setVMSharedFolderState",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "folderId",
+                        "in": "path",
+                        "description": "Shared folder ID",
+                        "required": true,
+                        "type": "integer"
+                    },
+                    {
+                        "name": "state",
+                        "in": "body",
+                        "description": "Shared folder state",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/folderState"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM shared folder state",
+                        "schema": {
+                            "$ref": "#/definitions/folderState"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            },
+          "delete": {
+                "description": "Remove VM shared folder",
+                "operationId": "removeVMSharedFolder",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "folderId",
+                        "in": "path",
+                        "description": "Shared folder ID",
+                        "required": true,
+                        "type": "integer"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Folder removed"
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{id}/ipaddress": {
+            "get": {
+                "description": "Get VM ipaddress",
+                "operationId": "VM id",
+                "produces": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of VM",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "VM ipaddress",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "408": {
+                        "description": "Request timeout",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "default": {
+                        "description": "unexpected error",
+                        "schema": {
+                            "$ref": "#/definitions/errorModel"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "vm": {
+            "required": [
+                "id",
+                "name"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                }
+            }
+        },
+        "createVM": {
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "id": {
+                    "description": "New VM ID",
+                    "type": "string"
+                },
+                "parentId": {
+                    "description": "Existing VM ID to clone. If not set, the default template VM is cloned.",
+                    "type": "string"
+                }
+            }
+        },
+        "folderState": {
+            "required": [
+                "guestPath",
+                "hostPath",
+                "flags"
+            ],
+            "properties": {
+                "guestPath": {
+                    "type": "string"
+                },
+                "hostPath": {
+                    "type": "string"
+                },
+                "flags": {
+                    "type": "integer"
+                }
+            }
+        },
+        "errorModel": {
+            "required": [
+                "code",
+                "message"
+            ],
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}
