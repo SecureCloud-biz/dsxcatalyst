@@ -10,6 +10,8 @@ __author__ = 'Dave Parsons'
 __version__ = '1.0.0'
 __license__ = 'MIT'
 
+VIX_SHAREDFOLDER_WRITE_ACCESS = 4
+
 if sys.version_info < (2, 7):
     sys.stderr.write('You need Python 2.7 or later\n')
     sys.exit(1)
@@ -27,21 +29,11 @@ def isfolder(foldername):
     return os.path.isdir(foldername)
 
 
-def isVMX(id):
-    if isfile(names[id]):
-        code = 200
-        output = ''
-    else:
-        code = 500
-        output = '{"code": 500, "message": "lstat : no such file or directory"}'
-    return code, output
-
-
 def joinpath(folder, file):
     return os.path.join(folder, file)
 
 
-def runcmd(cmd):
+def runcmd(cmd, strip=True):
 
     # vmrun does not return any exit codes and all errors are in stdout!
     proc = subprocess.Popen(config['VMRUN'] + config['VMTYPE'] + cmd, shell=True, stdout=subprocess.PIPE)
@@ -57,6 +49,8 @@ def runcmd(cmd):
     else:
         output = ''
 
+    if strip:
+        output = output.replace('\n', '').replace('\r', '')
     return code, output
 
 
@@ -97,24 +91,34 @@ def post_vms():
 
     if 'parentId' in body:
         srcvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body["parentId"]), body["parentId"] + '.vmx')
+    elif 'sourceReference' in body:
+        srcvmx = body['sourceReference']
     else:
         srcvmx = config['DEFAULT_PARENT_VM_PATH']
-
-    print('clone ' + srcvmx + ' ' + destvmx + ' full')
 
     # Run the command
     code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
 
-    # Check reposnse code from the vmrun procedure & return to caller
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
         if 'parentId' in body:
-            response.body = '{"id": "' + body["id"] + '", "parentId": "' + body["parentId"] + '", "name": "", "tag": "", "sourceReference": ""}'
+            response.body = '{"id": "' + body["id"] + \
+                            '", "parentId": "' + body["parentId"] + '", "name": "", "tag": "", "sourceReference": ""}'
+        elif 'sourceReference' in body:
+            response.body = '{"id": "' + body["id"] + \
+                            '", "parentId": "", "name": "", "tag": "", "sourceReference": "' + \
+                            body['sourceReference'] + '"}'
         else:
-            response.body = '{"id": "' + body["id"] + '", "parentId": "", "name": "", "tag": "", "sourceReference": ""}'
-        response.code = code
+            response.body = '{"id": "' + body["id"] + \
+                            '", "parentId": "", "name": "", "tag": "", "sourceReference": ""}'
+
+        names[body['id']] = destvmx
+        vmx = ConfigObj(destvmx)
+        vms[body['id']] = vmx
+        response.status = code
     elif code == 500:
         response.body = '{"code": 500, "message": "' + message + '"}'
-        response.code = code
+        response.status = code
     else:
         pass
 
@@ -126,23 +130,17 @@ def post_vms():
 def get_vms_id(id):
 
     # Check id is valid
-    code, message = isVMX(id)
-    if code == 200:
-        if vms:
-            for key, value in vms.iteritems():
-                if id == key:
-                    output =  '{"id": "' + key + '", "name": "' + vms[key]['displayname'] + '", "tag": ""}'
-                response.status = 200
-        else:
-            output = '{}'
-            response.status = 500
-        response.body = output
-    elif code == 500:
-        response.status = code
-        response.body = message
+    # TODO: What if VM is not present?
+    if vms:
+        for key, value in vms.iteritems():
+            if id == key:
+                output =  '{"id": "' + key + '", "name": "' + vms[key]['displayname'] + '", "tag": ""}'
+            response.status = 200
     else:
-        pass
+        output = '{}'
+        response.status = 500
 
+    response.body = output
     response.content_type = 'application/json; charset=utf-8'
     return response
 
@@ -150,26 +148,21 @@ def get_vms_id(id):
 @delete('/api/vms/<id>')
 def del_vms_id(id):
 
-    # Check id is valid
-    code, message = isVMX(id)
+    # Delete the VM from inventory
+    code, output = runcmd('stop ' + names[id] + ' hard')
+    code, output = runcmd('deleteVM ' + names[id])
     if code == 200:
-
-        # Delete the VM from inventory
-        runcmd('deleteVM ' + names[id])
-        if code == 200:
-            response.code = 204
-        elif code == 500:
-            response.body = '{"code": 500, "message": "' + message + '"}'
-            response.code == code
-        else:
-            pass
-
+        response.status = 204
     elif code == 500:
-        response.status = code
-        response.body = message
-
+        response.body = '{"code": 500, "message": "' + output + '"}'
+        response.status == code
     else:
         pass
+
+    # Remove the relevant dict entries
+    if id in names:
+        del names[id]
+        del vms[id]
 
     response.content_type = 'application/json; charset=utf-8'
     return response
@@ -178,28 +171,17 @@ def del_vms_id(id):
 @get('/api/vms/power/<id>')
 def get_vms_power_id(id):
 
-    # Check id is valid
-    code, message = isVMX(id)
+    # List the running VMs and see if id is one of them
+    code, message = runcmd('list')
     if code == 200:
-        # List the running VMs and see if id is one of them
-        code, message = runcmd('list')
-        if code == 200:
-            if id in message:
-                response.body = '{"code": 200, "message": "powered on"}'
-            else:
-                response.body = '{"code": 200, "message": "powered off"}'
-            response.code = code
-        elif code == 500:
-            response.body = '{"code": 500, "message": "' + message + '"}'
-            response.code == code
-
+        if id in message:
+            response.body = '{"code": 200, "message": "powered on"}'
         else:
-            pass
-
-    elif code == 500:
+            response.body = '{"code": 200, "message": "powered off"}'
         response.status = code
-        response.body = message
-
+    elif code == 500:
+        response.body = '{"code": 500, "message": "' + message + '"}'
+        response.status == code
     else:
         pass
 
@@ -214,7 +196,7 @@ def patch_vms_power_id(id):
     body = request.body.read()
     if body == 'on':
         powerop = 'start'
-        powersubop = ''
+        powersubop = 'nogui'
         json = '{"code": 200, "message": "The VM is powered on."}'
     elif body == 'off':
         powerop = 'stop'
@@ -239,23 +221,15 @@ def patch_vms_power_id(id):
     else:
         json = '{"code": 500, "message": "The op name is not supported."}'
 
-    # Check id is valid
+    # Run the command
+    code, output = runcmd(powerop + ' ' + names[id] + ' ' + powersubop)
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-
-        # Run the command
-        code, output = runcmd(powerop + ' ' + names[id] + ' ' + powersubop)
-
-        # Check reposnse code from the vmrun procedure & return to caller
-        if code == 200:
-            response.body = json
-        elif code == 500:
-            response.body = '{"code": 500, "message": "VIX Error: The virtual machine needs to be powered on, code: 3006, ' \
-                            'operation: vm.' + powerop + '"}'
-        else:
-            pass
-
+        response.body = json
     elif code == 500:
-        response.body = message
+        response.body = '{"code": 500, "message": "VIX Error: The virtual machine needs to be powered on, code: 3006, ' \
+                        'operation: vm.' + powerop + '"}'
     else:
         pass
 
@@ -266,118 +240,172 @@ def patch_vms_power_id(id):
 
 @get('/api/vms/<id>/folders')
 def get_vms_folders_id(id):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
+    # Retrieve shared folders
+    code, output  = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder.maxNum')
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-        # Not sure how o get shared folders here!!!
-        pass
+        # Iterate through guestName variables
+        body = "["
+        if output:
+            j = int(output)
+            for i in range(0, j):
+                code, output = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
+                body = body + output + ','
+        if len(body) > 1:
+            body = body[:-1]
+        body = body + ']'
+        response.body = body
+        response.content_type = 'text/plain; charset=utf-8'
     elif code == 500:
-        response.status = code
-        response.body = message
+        response.body = '{"code": 500, "message": ' + output + '"}'
+        response.content_type = 'application/json; charset=utf-8'
     else:
         pass
+
+    response.status = 200
     return response
 
 
 @patch('/api/vms/<id>/folders')
 def patch_vms_id_folders(id):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
+
+    # Toggle shared folders on/off
+    body = request.body.read()
+    if body == 'true':
+        folderop = 'enableSharedFolders '
+    elif body == 'false':
+        folderop = 'disableSharedFolders '
+    else:
+        json = '{"code": 500, "message": "The op name is not supported."}'
+
+    # Run the command
+    code, output = runcmd(folderop + names[id])
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-        pass
+        response.body = '{"code": 200, "message": "' + body + '"}'
     elif code == 500:
-        response.status = code
-        response.body = message
+        response.body = '{"code": 500, "message": ' + message + '"}'
     else:
         pass
+
+    response.content_type = 'application/json; charset=utf-8'
+    response.status = code
     return response
 
 
 @post('/api/vms/<id>/folders')
 def post_vms_id_folders_id(id):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
-    if code == 200:
-        # Enable/disable shared folders
-        # enableSharedFolders
-        # disableSharedFolder
-        pass
-    elif code == 500:
+    # Add a new shared folder
+    body = json.load(request.body)
+    if {'guestPath', 'hostPath', 'flags'} == set(body):
+
+        # Run the command
+        code, output = runcmd('addSharedFolder ' + names[id] + ' ' + body['guestPath'] + ' ' + body['hostPath'])
+
+        # Check response code from the vmrun procedure & return to caller
+        if code == 200:
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + \
+                            '", "flags": 4}'
+        elif code == 500:
+            response.body = '{"code": 500, "message": ' + output + '"}'
+        else:
+            pass
         response.status = code
-        response.body = message
     else:
-        pass
+        response.body = '{"code": 500, "message": "EOF"}'
+        response.status = 500
+
+    response.content_type = 'application/json; charset=utf-8'
     return response
 
 
 @get('/api/vms/<id>/folders/<folderid>')
 def get_vms_id_folders_id(id, folderid):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
+    # Retrieve shared folders
+    code, output  = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder.maxNum')
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-        pass
+        # Iterate through guestName variables
+        if output:
+            for i in range(0, j):
+                code, guestPath = runcmd('readVariable ' + names[id]
+                                         + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
+                if guestPath == folderid:
+                    code, hostPath = runcmd('readVariable ' + names[id]
+                                             + ' runtimeConfig sharedFolder' + str(i) + '.hostPath')
+                    response.body = '{"guestPath": "' + folderid + '", "hostPath": "' + hostPath + '", "flags": 4}'
     elif code == 500:
-        response.status = code
-        response.body = message
+        response.body = '{"code": 500, "message": ' + message + '"}'
     else:
         pass
+
+    response.content_type = 'application/json; charset=utf-8'
+    response.status = 200
     return response
 
 
 @patch('/api/vms/<id>/folders/<folderid>')
 def patch_vms_id_folders_id(id, folderid):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
-    if code == 200:
-        pass
-    elif code == 500:
+    # Modify a shared folder
+    body = json.load(request.body)
+    if {'guestPath', 'hostPath', 'flags'} == set(body):
+
+        # Run the command
+        code, output = runcmd('setSharedFolderState ' + names[id] + ' ' + body['guestPath']
+                              + ' ' + body['hostPath'] + ' writeable')
+
+        # Check response code from the vmrun procedure & return to caller
+        if code == 200:
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "'\
+                            + body['hostPath'] + '", "flags": 4}'
+        elif code == 500:
+            response.body = '{"code": 500, "message": ' + message + '"}'
+        else:
+            pass
         response.status = code
-        response.body = message
     else:
-        pass
+        response.body = '{"code": 500, "message": "EOF"}'
+        response.status = 500
+
+    response.content_type = 'application/json; charset=utf-8'
     return response
+
 
 
 @delete('/api/vms/<id>/folders/<folderid>')
 def delete_vms_id_folders_id(id, folderid):
-    # TO DO: Implement function
-    # Check id is valid
-    code, message = isVMX(id)
+    # Delete a shared folder
+
+    # Run the command
+    code, output = runcmd('removeSharedFolder ' + names[id] + ' ' + folderid)
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-        pass
+        code = 204
     elif code == 500:
-        response.status = code
-        response.body = message
+        response.body = '{"code": 500, "message": ' + message + '"}'
     else:
         pass
+
+    response.status = code
+    response.content_type = 'application/json; charset=utf-8'
     return response
 
 
 @get('/api/vms/<id>/ipaddress')
 def get_vms_getipaddress(id):
 
-    # Check id is valid
-    code, output = isVMX(id)
+    # Run the command
+    code, output = runcmd('getGuestIPAddress ' + names[id] + ' -wait')
+
+    # Check response code from the vmrun procedure & return to caller
     if code == 200:
-
-        # Run the command
-        code, output = runcmd('getGuestIPAddress ' + names[id] + ' wait')
-
-        # Check reposnse code from the vmrun procedure & return to caller
-        if code == 200:
-            response.body = '{"code": 200, "message": "' + output + '"}'
-        elif code == 500:
-            response.body = '{"code": 500, "message": ' + output + '"}'
-        else:
-            pass
-
+        response.body = '{"code": 200, "message": "' + output + '"}'
     elif code == 500:
-        response.body = message
+        response.body = '{"code": 500, "message": ' + output + '"}'
     else:
         pass
 
@@ -410,7 +438,7 @@ def main():
     names = {}
     vms = {}
 
-    # TO DO: Need more robust code here to trap invalid folders/files
+    # TODO: Need more robust code here to trap invalid folders/files
     # Walk top-level folders only - no nested folders allowed
     for dirs in os.walk(default_vm_path).next()[1]:
         vmfolder = joinpath(default_vm_path, dirs)
@@ -427,7 +455,7 @@ def main():
     print(names)
 
     # Start development server on all IPs and using configured port
-    run(host = '0.0.0.0', port = config['PORT'])
+    run(host = '0.0.0.0', port = config['PORT'], debug = True)
 
 
 if __name__ == '__main__':
