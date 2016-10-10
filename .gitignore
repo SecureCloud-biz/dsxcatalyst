@@ -2,3 +2,4 @@
 pyinstaller/
 photon/
 /vmInventory
+*.pyc
