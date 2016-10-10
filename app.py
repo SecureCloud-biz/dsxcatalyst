@@ -1,9 +1,34 @@
+"""
+The MIT License (MIT)
+
+Copyright (c) 2016 Dave Parsons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the 'Software'), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
 from __future__ import print_function
 import json
 import os
+import platform
 import subprocess
 import sys
-from bottle import route, run, template, get, delete, post, patch, request, response, static_file
+from bottle import route, run, template, get, delete, post, patch, request, response, static_file, error
 from configobj import ConfigObj
 
 __author__ = 'Dave Parsons'
@@ -115,6 +140,8 @@ def post_vms():
         names[body['id']] = destvmx
         vmx = ConfigObj(destvmx)
         vms[body['id']] = vmx
+        with open('vmInventory', 'w') as f:
+            json.dump(names, f)
         response.status = code
     elif code == 500:
         response.body = '{"code": 500, "message": "' + message + '"}'
@@ -164,6 +191,9 @@ def del_vms_id(id):
         del names[id]
         del vms[id]
 
+    with open('vmInventory', 'w') as f:
+        json.dump(names, f)
+
     response.content_type = 'application/json; charset=utf-8'
     return response
 
@@ -196,6 +226,7 @@ def patch_vms_power_id(id):
     body = request.body.read()
     if body == 'on':
         powerop = 'start'
+        powersubop = ''
         powersubop = 'nogui'
         json = '{"code": 200, "message": "The VM is powered on."}'
     elif body == 'off':
@@ -306,8 +337,7 @@ def post_vms_id_folders_id(id):
 
         # Check response code from the vmrun procedure & return to caller
         if code == 200:
-            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + \
-                            '", "flags": 4}'
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + '", "flags": 4}'
         elif code == 500:
             response.body = '{"code": 500, "message": ' + output + '"}'
         else:
@@ -331,11 +361,9 @@ def get_vms_id_folders_id(id, folderid):
         # Iterate through guestName variables
         if output:
             for i in range(0, j):
-                code, guestPath = runcmd('readVariable ' + names[id]
-                                         + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
+                code, guestPath = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
                 if guestPath == folderid:
-                    code, hostPath = runcmd('readVariable ' + names[id]
-                                             + ' runtimeConfig sharedFolder' + str(i) + '.hostPath')
+                    code, hostPath = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.hostPath')
                     response.body = '{"guestPath": "' + folderid + '", "hostPath": "' + hostPath + '", "flags": 4}'
     elif code == 500:
         response.body = '{"code": 500, "message": ' + message + '"}'
@@ -359,8 +387,7 @@ def patch_vms_id_folders_id(id, folderid):
 
         # Check response code from the vmrun procedure & return to caller
         if code == 200:
-            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "'\
-                            + body['hostPath'] + '", "flags": 4}'
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + '", "flags": 4}'
         elif code == 500:
             response.body = '{"code": 500, "message": ' + message + '"}'
         else:
@@ -420,42 +447,59 @@ def server_static(filepath):
     return static_file(filepath, root='./json')
 
 
+@error(500)
+def error500(error):
+    # Pass back any 500 Internal Server Errors in JSON and not HTML format
+    response.status = 500
+    response.body = '{"code": 500, "message": "' + error.traceback.splitlines()[-1] + '"}'
+    response.content_type = 'application/json; charset=utf-8'
+    return response
+
+
 def main():
+
     # Read the appcatalyst.conf file and validate parameters
     scriptpath = getstringpath()
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
     if not isfile(configfile):
-        print('appcatalyst.conf not found')
+        print('AppCatalyst - appcatalyst.conf not found')
         sys.exit(1)
     global config
     config = ConfigObj(configfile)
     global default_vm_path
     default_vm_path = config['DEFAULT_VM_PATH'];
 
-    # Get the VMs from the default folder
+    # Get the VMs from the inventory
     global names
     global vms
     names = {}
     vms = {}
 
-    # TODO: Need more robust code here to trap invalid folders/files
-    # Walk top-level folders only - no nested folders allowed
-    for dirs in os.walk(default_vm_path).next()[1]:
-        vmfolder = joinpath(default_vm_path, dirs)
-        # Find VMX file it the currently folder
-        for file in os.listdir(vmfolder):
-            if file.endswith('.vmx'):
-                # Found VMX file so add to the 2 dicts:
-                # names - folder name --> vmx file path
-                # vms   - folder name --> vmx file contents
-                vmxfile = (joinpath(vmfolder, file))
-                names[dirs] = vmxfile
-                vmx = ConfigObj(vmxfile)
-                vms[dirs] = vmx
-    print(names)
+    with open('vmInventory', 'r') as f:
+        names = json.load(f)
+
+    # Found VMX file so ensure the 2 dicts:
+    # names - folder name --> vmx file path
+    # vms   - folder name --> vmx file contents
+    print('AppCatalyst - discovered vms:')
+    for name, vmxfile in names.items():
+        print(name, vmxfile)
+        if isfile(vmxfile):
+            # Read and add guest VMX file to dict
+            vmx = ConfigObj(vmxfile)
+            vms[vmxfile] = vmx
+            # for k, v in vmx.items():
+            #     print(k + ' = "'+ v + '"')
+        else:
+            # Remove any missing guests
+            del names[id]
 
     # Start development server on all IPs and using configured port
-    run(host = '0.0.0.0', port = config['PORT'], debug = True)
+    try:
+        run(host='0.0.0.0', port=config['PORT'], debug=True)
+    finally:
+        with open('vmInventory', 'w') as f:
+            json.dump(names, f)
 
 
 if __name__ == '__main__':
