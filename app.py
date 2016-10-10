@@ -226,7 +226,6 @@ def patch_vms_power_id(id):
     body = request.body.read()
     if body == 'on':
         powerop = 'start'
-        powersubop = ''
         powersubop = 'nogui'
         json = '{"code": 200, "message": "The VM is powered on."}'
     elif body == 'off':
