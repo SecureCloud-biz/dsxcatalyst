@@ -442,20 +442,14 @@ def get_vms_getipaddress(id):
 
 @get('/')
 def server_root():
-    # Return the original swagger.json as used by Vagrant plugin
+    # Return swagger-ui index.html
     return static_file('index.html', root='./swagger')
 
 
 @get('/<filepath:path>')
 def server_swagger(filepath):
-    # Return the original swagger.json as used by Vagrant plugin
+    # Mapping for swagger-ui static files
     return static_file(filepath, root='./swagger')
-
-
-# @get('/json/<filepath:path>')
-# def server_json(filepath):
-#     # Return the original swagger.json as used by Vagrant plugin
-#     return static_file(filepath, root='./json')
 
 
 @error(500)
@@ -469,6 +463,7 @@ def error500(error):
 
 def main():
 
+    # TODO: Rethink configuration and VMs persistence using JSON and Bottle.config
     # Read the appcatalyst.conf file and validate parameters
     scriptpath = getstringpath()
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
