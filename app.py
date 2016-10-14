@@ -440,10 +440,22 @@ def get_vms_getipaddress(id):
     return response
 
 
-@get('/json/<filepath:path>')
-def server_static(filepath):
+@get('/')
+def server_root():
     # Return the original swagger.json as used by Vagrant plugin
-    return static_file(filepath, root='./json')
+    return static_file('index.html', root='./swagger')
+
+
+@get('/<filepath:path>')
+def server_swagger(filepath):
+    # Return the original swagger.json as used by Vagrant plugin
+    return static_file(filepath, root='./swagger')
+
+
+# @get('/json/<filepath:path>')
+# def server_json(filepath):
+#     # Return the original swagger.json as used by Vagrant plugin
+#     return static_file(filepath, root='./json')
 
 
 @error(500)
@@ -486,7 +498,7 @@ def main():
         if isfile(vmxfile):
             # Read and add guest VMX file to dict
             vmx = ConfigObj(vmxfile)
-            vms[vmxfile] = vmx
+            vms[name] = vmx
             # for k, v in vmx.items():
             #     print(k + ' = "'+ v + '"')
         else:
@@ -495,7 +507,7 @@ def main():
 
     # Start development server on all IPs and using configured port
     try:
-        run(host='0.0.0.0', port=config['PORT'], debug=True)
+        run(host='127.0.0.1', port=config['PORT'], debug=True)
     finally:
         with open('vmInventory', 'w') as f:
             json.dump(names, f)
