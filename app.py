@@ -31,6 +31,7 @@ import subprocess
 import sys
 from bottle import route, run, template, get, delete, post, patch, request, response, static_file, error
 from configobj import ConfigObj
+from pyvmxdict import VMDict
 
 __author__ = 'Dave Parsons'
 __version__ = '1.0.0'
@@ -121,7 +122,6 @@ def post_vms():
     elif 'sourceReference' in body:
         srcvmx = body['sourceReference']
         try:
-            # TODO: Need to add Windows variant of symlink
             os.makedirs(joinpath(config['DEFAULT_VM_PATH'], body['id']))
             os.symlink(srcvmx, destvmx)
             code = 200
@@ -475,6 +475,9 @@ def error500(error):
 
 def main():
 
+    # TODO: Much of this is not Pythonic and will need more work
+    # TODO: Implement a class for the main application to remove globals
+
     # Read the appcatalyst.conf file and validate parameters
     scriptpath = getstringpath()
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
@@ -503,11 +506,31 @@ def main():
         print(name, vmxfile)
         if isfile(vmxfile):
             # Read and add guest VMX file to dict
-            vmx = ConfigObj(vmxfile)
+            vmx = VMDict(vmxfile)
             vms[name] = vmx
         else:
             # Remove any missing guests
             del names[name]
+            with open('vmInventory', 'w') as f:
+                json.dump(names, f)
+
+    # Replace default os.symlink with Windows specific code if running on Windows
+    # Requires Administrator or Create Symlink permissions
+    # See http://stackoverflow.com/a/28382515
+    if os.name == "nt":
+        def symlink_ms(source, link_name):
+            import ctypes
+            csl = ctypes.windll.kernel32.CreateSymbolicLinkW
+            csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+            csl.restype = ctypes.c_ubyte
+            flags = 1 if os.path.isdir(source) else 0
+            try:
+                if csl(link_name, source.replace('/', '\\'), flags) == 0:
+                    raise ctypes.WinError()
+            except:
+                pass
+
+        os.symlink = symlink_ms
 
     # Start development server on all IPs and using configured port
     try:
