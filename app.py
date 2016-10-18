@@ -26,6 +26,7 @@ from __future__ import print_function
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 from bottle import route, run, template, get, delete, post, patch, request, response, static_file, error
@@ -109,32 +110,39 @@ def post_vms():
     body = json.load(request.body)
 
     if 'id' in body:
-        destvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body["id"]), body["id"] + '.vmx')
+        destvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body['id']), body['id'] + '.vmx')
     else:
         response.body = '{"code": 500, "message": "EOF"}'
         response.body = 500
 
     if 'parentId' in body:
-        srcvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body["parentId"]), body["parentId"] + '.vmx')
+        srcvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body['parentId']), body['parentId'] + '.vmx')
+        code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
     elif 'sourceReference' in body:
         srcvmx = body['sourceReference']
+        try:
+            # TODO: Need to add Windows variant of symlink
+            os.makedirs(joinpath(config['DEFAULT_VM_PATH'], body['id']))
+            os.symlink(srcvmx, destvmx)
+            code = 200
+        except:
+            code = 500
+            message = "Failed to create VMX symlink"
     else:
         srcvmx = config['DEFAULT_PARENT_VM_PATH']
-
-    # Run the command
-    code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
+        code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
         if 'parentId' in body:
-            response.body = '{"id": "' + body["id"] + \
-                            '", "parentId": "' + body["parentId"] + '", "name": "", "tag": "", "sourceReference": ""}'
+            response.body = '{"id": "' + body['id'] + \
+                            '", "parentId": "' + body['parentId'] + '", "name": "", "tag": "", "sourceReference": ""}'
         elif 'sourceReference' in body:
-            response.body = '{"id": "' + body["id"] + \
+            response.body = '{"id": "' + body['id'] + \
                             '", "parentId": "", "name": "", "tag": "", "sourceReference": "' + \
                             body['sourceReference'] + '"}'
         else:
-            response.body = '{"id": "' + body["id"] + \
+            response.body = '{"id": "' + body['id'] + \
                             '", "parentId": "", "name": "", "tag": "", "sourceReference": ""}'
 
         names[body['id']] = destvmx
@@ -178,6 +186,11 @@ def del_vms_id(id):
     # Delete the VM from inventory
     code, output = runcmd('stop ' + names[id] + ' hard')
     code, output = runcmd('deleteVM ' + names[id])
+    try:
+        shutil.rmtree(joinpath(config['DEFAULT_VM_PATH'], id), True)
+    except:
+        code = 500
+        output = 'Failed to delete VMX folder'
     if code == 200:
         response.status = 204
     elif code == 500:
@@ -281,7 +294,7 @@ def get_vms_folders_id(id):
             j = int(output)
             for i in range(0, j):
                 code, output = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
-                body = body + output + ','
+                body = body + '"' + output + '",'
         if len(body) > 1:
             body = body[:-1]
         body = body + ']'
@@ -498,6 +511,7 @@ def main():
             #     print(k + ' = "'+ v + '"')
         else:
             # Remove any missing guests
+            # TODO: Need to search data first then delete
             del names[id]
 
     # Start development server on all IPs and using configured port
