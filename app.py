@@ -165,7 +165,6 @@ def post_vms():
 def get_vms_id(id):
 
     # Check id is valid
-    # TODO: What if VM is not present?
     if vms:
         for key, value in vms.iteritems():
             if id == key:
@@ -476,7 +475,6 @@ def error500(error):
 
 def main():
 
-    # TODO: Rethink configuration and VMs persistence using JSON and Bottle.config
     # Read the appcatalyst.conf file and validate parameters
     scriptpath = getstringpath()
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
@@ -507,12 +505,9 @@ def main():
             # Read and add guest VMX file to dict
             vmx = ConfigObj(vmxfile)
             vms[name] = vmx
-            # for k, v in vmx.items():
-            #     print(k + ' = "'+ v + '"')
         else:
             # Remove any missing guests
-            # TODO: Need to search data first then delete
-            del names[id]
+            del names[name]
 
     # Start development server on all IPs and using configured port
     try:
