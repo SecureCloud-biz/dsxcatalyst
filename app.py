@@ -38,10 +38,16 @@ __license__ = 'MIT'
 
 VIX_SHAREDFOLDER_WRITE_ACCESS = 4
 
-config = {}
 names = {}
 vms = {}
-default_vm_path = ''
+
+DEFAULT_VM_PATH = ''
+DEFAULT_PARENT_VM_PATH = ''
+DEFAULT_LOG_PATH = ''
+PORT = ''
+VMRUN = ''
+VMTYPE = ''
+
 
 if sys.version_info < (2, 7):
     sys.stderr.write('You need Python 2.7 or later\n')
@@ -67,7 +73,7 @@ def joinpath(folder, filename):
 def runcmd(cmd, strip=True):
 
     # vmrun does not return any exit codes and all errors are in stdout!
-    proc = subprocess.Popen(config['VMRUN'] + config['VMTYPE'] + cmd, shell=True, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(VMRUN + VMTYPE + cmd, shell=True, stdout=subprocess.PIPE)
     stdout = proc.stdout.readlines()
 
     if any("Error" in s for s in stdout):
@@ -88,8 +94,15 @@ def runcmd(cmd, strip=True):
 @get('/api')
 def api():
 
+    # TODO: Return configuration via HTML template
     # Return the config details (appcatalyst.conf)
-    return config
+    # DEFAULT_VM_PATH
+    # DEFAULT_PARENT_VM_PATH
+    # DEFAULT_LOG_PATH
+    # PORT
+    # VMRUN
+    # VMTYPE
+    return
 
 
 @get('/api/vms')
@@ -117,25 +130,25 @@ def post_vms():
     output = ''
 
     if 'id' in body:
-        destvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body['id']), body['id'] + '.vmx')
+        destvmx = joinpath(joinpath(DEFAULT_VM_PATH, body['id']), body['id'] + '.vmx')
     else:
         response.body = '{"code": 500, "message": "EOF"}'
         response.body = 500
 
     if 'parentId' in body:
-        srcvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body['parentId']), body['parentId'] + '.vmx')
+        srcvmx = joinpath(joinpath(DEFAULT_VM_PATH, body['parentId']), body['parentId'] + '.vmx')
         code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
     elif 'sourceReference' in body:
         srcvmx = body['sourceReference']
         try:
-            os.makedirs(joinpath(config['DEFAULT_VM_PATH'], body['id']))
+            os.makedirs(joinpath(DEFAULT_VM_PATH, body['id']))
             os.symlink(srcvmx, destvmx)
             code = 200
         except OSError:
             code = 500
             output = "Failed to create VMX symlink"
     else:
-        srcvmx = config['DEFAULT_PARENT_VM_PATH']
+        srcvmx = DEFAULT_PARENT_VM_PATH
         code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
 
     # Check response code from the vmrun procedure & return to caller
@@ -193,7 +206,7 @@ def del_vms_id(vmid):
     # code, output = runcmd('stop ' + names[vmid] + ' hard')
     code, output = runcmd('deleteVM ' + names[vmid])
     try:
-        shutil.rmtree(joinpath(config['DEFAULT_VM_PATH'], vmid), True)
+        shutil.rmtree(joinpath(DEFAULT_VM_PATH, vmid), True)
     except OSError:
         code = 500
         output = 'Failed to delete VMX folder'
@@ -497,21 +510,47 @@ def main():
     # TODO: Much of this is not Pythonic and will need more work
     # TODO: Implement a class for the main application to remove globals
 
+    # Get the underlying OS for configuration data
+    platform = sys.platform
+    if platform == 'darwin':
+        platform = 'macos'
+    elif platform == 'linux2':
+        platform = 'linux'
+    elif platform == 'win32':
+        platform = 'windows'
+    else:
+        print('DSXCatalyst - running on unknown platform')
+        sys.exit(1)
+
     # Read the appcatalyst.conf file and validate parameters
     scriptpath = getstringpath()
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
+
     if not isfile(configfile):
-        print('AppCatalyst - appcatalyst.conf not found')
+        print('DSXCatalyst - appcatalyst.conf not found')
         sys.exit(1)
-    global config
+
     config = ConfigObj(configfile)
-    global default_vm_path
-    default_vm_path = config['DEFAULT_VM_PATH']
+
+    global DEFAULT_VM_PATH
+    global DEFAULT_PARENT_VM_PATH
+    global DEFAULT_LOG_PATH
+    global PORT
+    global VMRUN
+    global VMTYPE
+
+    DEFAULT_VM_PATH = config[platform]['DEFAULT_VM_PATH']
+    DEFAULT_PARENT_VM_PATH = config[platform]['DEFAULT_PARENT_VM_PATH']
+    DEFAULT_LOG_PATH = config[platform]['DEFAULT_LOG_PATH']
+    PORT = config[platform]['PORT']
+    VMRUN = config[platform]['VMRUN']
+    VMTYPE = config[platform]['VMTYPE']
 
     # Get the VMs from the inventory
     global names
     global vms
 
+    # Read or create the vmInventory file
     if isfile('vmInventory'):
         with open('vmInventory', 'r') as f:
             names = json.load(f)
@@ -541,7 +580,7 @@ def main():
     # Replace default os.symlink with Windows specific code if running on Windows
     # Requires Administrator or Create Symlink permissions
     # See http://stackoverflow.com/a/28382515
-    if os.name == "nt":
+    if platform == "windows":
         def symlink_ms(source, link_name):
             import ctypes
             csl = ctypes.windll.kernel32.CreateSymbolicLinkW
@@ -558,7 +597,7 @@ def main():
 
     # Start development server on all IPs and using configured port
     try:
-        run(host='127.0.0.1', port=config['PORT'], debug=True)
+        run(host='127.0.0.1', port=PORT, debug=True)
     finally:
         with open('vmInventory', 'w') as f:
             json.dump(names, f)
