@@ -111,10 +111,10 @@ def get_vms():
     # Return the names dict keys in non-JSON text form:
     # ["photon1", "photons2", ...]
     # Ignore the "tags" parameters as not used in AppCatalyst previews
-    output = "["
+    output = ''
     for key in names.keys():
-        output = output + '"' + key + '",'
-    output = output[:-1] + ']'
+        output = "[" + output + '"' + key + '",'
+    output = '[' + output[:-1] + ']'
     response.body = output
     response.content_type = 'text/plain; charset=utf-8'
     response.status = 200
