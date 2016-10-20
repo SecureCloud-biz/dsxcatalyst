@@ -212,6 +212,7 @@ def del_vms_id(vmid):
 
     with open('vmInventory', 'w') as f:
         json.dump(names, f)
+        f.close()
 
     response.content_type = 'application/json; charset=utf-8'
     return response
@@ -511,8 +512,14 @@ def main():
     global names
     global vms
 
-    with open('vmInventory', 'r') as f:
-        names = json.load(f)
+    if isfile('vmInventory'):
+        with open('vmInventory', 'r') as f:
+            names = json.load(f)
+            f.close()
+    else:
+        with open('vmInventory', 'w') as f:
+            f.writelines('{}')
+            f.close()
 
     # Found VMX file so ensure the 2 dicts:
     # names - folder name --> vmx file path
@@ -529,6 +536,7 @@ def main():
             del names[name]
             with open('vmInventory', 'w') as f:
                 json.dump(names, f)
+                f.close()
 
     # Replace default os.symlink with Windows specific code if running on Windows
     # Requires Administrator or Create Symlink permissions
@@ -554,6 +562,7 @@ def main():
     finally:
         with open('vmInventory', 'w') as f:
             json.dump(names, f)
+            f.close()
 
 
 if __name__ == '__main__':
