@@ -113,7 +113,7 @@ def get_vms():
     # Ignore the "tags" parameters as not used in AppCatalyst previews
     output = ''
     for key in names.keys():
-        output = "[" + output + '"' + key + '",'
+        output = output + '"' + key + '",'
     output = '[' + output[:-1] + ']'
     response.body = output
     response.content_type = 'text/plain; charset=utf-8'
@@ -539,12 +539,18 @@ def main():
     global VMRUN
     global VMTYPE
 
-    DEFAULT_VM_PATH = config[platform]['DEFAULT_VM_PATH']
-    DEFAULT_PARENT_VM_PATH = config[platform]['DEFAULT_PARENT_VM_PATH']
-    DEFAULT_LOG_PATH = config[platform]['DEFAULT_LOG_PATH']
+    DEFAULT_VM_PATH = os.path.expanduser(config[platform]['DEFAULT_VM_PATH'])
+    DEFAULT_PARENT_VM_PATH = os.path.expanduser(config[platform]['DEFAULT_PARENT_VM_PATH'])
+    DEFAULT_LOG_PATH = os.path.expanduser(config[platform]['DEFAULT_LOG_PATH'])
     PORT = config[platform]['PORT']
     VMRUN = config[platform]['VMRUN']
     VMTYPE = config[platform]['VMTYPE']
+
+    print(DEFAULT_VM_PATH)
+    print(DEFAULT_PARENT_VM_PATH)
+    print(DEFAULT_LOG_PATH)
+    print(PORT)
+    print(VMRUN + VMTYPE)
 
     # Get the VMs from the inventory
     global names
