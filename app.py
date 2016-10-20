@@ -25,11 +25,10 @@ THE SOFTWARE.
 from __future__ import print_function
 import json
 import os
-import platform
 import shutil
 import subprocess
 import sys
-from bottle import route, run, template, get, delete, post, patch, request, response, static_file, error
+from bottle import run, get, delete, post, patch, request, response, static_file, error
 from configobj import ConfigObj
 from pyvmxdict import VMDict
 
@@ -38,6 +37,11 @@ __version__ = '1.0.0'
 __license__ = 'MIT'
 
 VIX_SHAREDFOLDER_WRITE_ACCESS = 4
+
+config = {}
+names = {}
+vms = {}
+default_vm_path = ''
 
 if sys.version_info < (2, 7):
     sys.stderr.write('You need Python 2.7 or later\n')
@@ -56,8 +60,8 @@ def isfolder(foldername):
     return os.path.isdir(foldername)
 
 
-def joinpath(folder, file):
-    return os.path.join(folder, file)
+def joinpath(folder, filename):
+    return os.path.join(folder, filename)
 
 
 def runcmd(cmd, strip=True):
@@ -95,7 +99,7 @@ def get_vms():
     # ["photon1", "photons2", ...]
     # Ignore the "tags" parameters as not used in AppCatalyst previews
     output = "["
-    for key in names.iterkeys():
+    for key in names.keys():
         output = output + '"' + key + '",'
     output = output[:-1] + ']'
     response.body = output
@@ -109,6 +113,8 @@ def post_vms():
 
     # Create a new cloned VM from default or specified source
     body = json.load(request.body)
+    destvmx = ''
+    output = ''
 
     if 'id' in body:
         destvmx = joinpath(joinpath(config['DEFAULT_VM_PATH'], body['id']), body['id'] + '.vmx')
@@ -125,9 +131,9 @@ def post_vms():
             os.makedirs(joinpath(config['DEFAULT_VM_PATH'], body['id']))
             os.symlink(srcvmx, destvmx)
             code = 200
-        except:
+        except OSError:
             code = 500
-            message = "Failed to create VMX symlink"
+            output = "Failed to create VMX symlink"
     else:
         srcvmx = config['DEFAULT_PARENT_VM_PATH']
         code, output = runcmd('clone ' + srcvmx + ' ' + destvmx + ' full')
@@ -152,7 +158,7 @@ def post_vms():
             json.dump(names, f)
         response.status = code
     elif code == 500:
-        response.body = '{"code": 500, "message": "' + message + '"}'
+        response.body = '{"code": 500, "message": "' + output + '"}'
         response.status = code
     else:
         pass
@@ -161,14 +167,15 @@ def post_vms():
     return response
 
 
-@get('/api/vms/<id>')
-def get_vms_id(id):
+@get('/api/vms/<vmid>')
+def get_vms_id(vmid):
 
     # Check id is valid
+    output = ''
     if vms:
-        for key, value in vms.iteritems():
-            if id == key:
-                output =  '{"id": "' + key + '", "name": "' + vms[key]['displayname'] + '", "tag": ""}'
+        for key, value in vms.items():
+            if vmid == key:
+                output = '{"id": "' + key + '", "name": "' + vms[key]['displayname'] + '", "tag": ""}'
             response.status = 200
     else:
         output = '{}'
@@ -179,29 +186,29 @@ def get_vms_id(id):
     return response
 
 
-@delete('/api/vms/<id>')
-def del_vms_id(id):
+@delete('/api/vms/<vmid>')
+def del_vms_id(vmid):
 
     # Delete the VM from inventory
-    code, output = runcmd('stop ' + names[id] + ' hard')
-    code, output = runcmd('deleteVM ' + names[id])
+    # code, output = runcmd('stop ' + names[vmid] + ' hard')
+    code, output = runcmd('deleteVM ' + names[vmid])
     try:
-        shutil.rmtree(joinpath(config['DEFAULT_VM_PATH'], id), True)
-    except:
+        shutil.rmtree(joinpath(config['DEFAULT_VM_PATH'], vmid), True)
+    except OSError:
         code = 500
         output = 'Failed to delete VMX folder'
     if code == 200:
         response.status = 204
     elif code == 500:
         response.body = '{"code": 500, "message": "' + output + '"}'
-        response.status == code
+        response.status = code
     else:
         pass
 
     # Remove the relevant dict entries
     if id in names:
-        del names[id]
-        del vms[id]
+        del names[vmid]
+        del vms[vmid]
 
     with open('vmInventory', 'w') as f:
         json.dump(names, f)
@@ -210,20 +217,20 @@ def del_vms_id(id):
     return response
 
 
-@get('/api/vms/power/<id>')
-def get_vms_power_id(id):
+@get('/api/vms/power/<vmid>')
+def get_vms_power_id(vmid):
 
     # List the running VMs and see if id is one of them
     code, message = runcmd('list')
     if code == 200:
-        if id in message:
+        if vmid in message:
             response.body = '{"code": 200, "message": "powered on"}'
         else:
             response.body = '{"code": 200, "message": "powered off"}'
         response.status = code
     elif code == 500:
         response.body = '{"code": 500, "message": "' + message + '"}'
-        response.status == code
+        response.status = code
     else:
         pass
 
@@ -231,47 +238,50 @@ def get_vms_power_id(id):
     return response
 
 
-@patch('/api/vms/power/<id>')
-def patch_vms_power_id(id):
+@patch('/api/vms/power/<vmid>')
+def patch_vms_power_id(vmid):
 
     # Power operations for the VM
     body = request.body.read()
+    powerop = ''
+    powersubop = ''
     if body == 'on':
         powerop = 'start'
         powersubop = 'nogui'
-        json = '{"code": 200, "message": "The VM is powered on."}'
+        body = '{"code": 200, "message": "The VM is powered on."}'
     elif body == 'off':
         powerop = 'stop'
         powersubop = 'hard'
-        json = '{"code": 200, "message": "The VM is powered off."}'
+        body = '{"code": 200, "message": "The VM is powered off."}'
     elif body == 'shutdown':
         powerop = 'stop'
         powersubop = 'soft'
-        json = '{"code": 200, "message": "The VM is shut down."}'
+        body = '{"code": 200, "message": "The VM is shut down."}'
     elif body == 'suspend':
         powerop = 'suspend'
         powersubop = ''
-        json = '{"code": 200, "message": "The VM is suspended."}'
+        body = '{"code": 200, "message": "The VM is suspended."}'
     elif body == 'pause':
         powerop = 'pause'
         powersubop = ''
-        json = '{"code": 200, "message": "The VM is paused."}'
+        body = '{"code": 200, "message": "The VM is paused."}'
     elif body == 'unpause':
         powerop = 'unpause'
         powersubop = ''
-        json = '{"code": 200, "message": "The VM is unpaused."}'
+        body = '{"code": 200, "message": "The VM is unpaused."}'
     else:
-        json = '{"code": 500, "message": "The op name is not supported."}'
+        body = '{"code": 500, "message": "The op name is not supported."}'
 
     # Run the command
-    code, output = runcmd(powerop + ' ' + names[id] + ' ' + powersubop)
+    code, output = runcmd(powerop + ' ' + names[vmid] + ' ' + powersubop)
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
-        response.body = json
+        response.body = body
     elif code == 500:
-        response.body = '{"code": 500, "message": "VIX Error: The virtual machine needs to be powered on, code: 3006, ' \
-                        'operation: vm.' + powerop + '"}'
+        response.body = '{"code": 500, "message": "VIX Error: ' \
+                        'The virtual machine needs to be powered on, code: 3006, operation: vm.' \
+                        + powerop + '"}'
     else:
         pass
 
@@ -280,10 +290,10 @@ def patch_vms_power_id(id):
     return response
 
 
-@get('/api/vms/<id>/folders')
-def get_vms_folders_id(id):
+@get('/api/vms/<vmid>/folders')
+def get_vms_folders_id(vmid):
     # Retrieve shared folders
-    code, output  = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder.maxNum')
+    code, output = runcmd('readVariable ' + names[vmid] + ' runtimeConfig sharedFolder.maxNum')
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
@@ -292,11 +302,12 @@ def get_vms_folders_id(id):
         if output:
             j = int(output)
             for i in range(0, j):
-                code, output = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
+                code, output = runcmd('readVariable ' + names[vmid] + ' runtimeConfig sharedFolder'
+                                      + str(i) + '.guestName')
                 body = body + '"' + output + '",'
         if len(body) > 1:
             body = body[:-1]
-        body = body + ']'
+        body += ']'
         response.body = body
         response.content_type = 'text/plain; charset=utf-8'
     elif code == 500:
@@ -309,26 +320,29 @@ def get_vms_folders_id(id):
     return response
 
 
-@patch('/api/vms/<id>/folders')
-def patch_vms_id_folders(id):
+@patch('/api/vms/<vmid>/folders')
+def patch_vms_id_folders(vmid):
 
     # Toggle shared folders on/off
     body = request.body.read()
+    folderop = ''
     if body == 'true':
         folderop = 'enableSharedFolders '
     elif body == 'false':
         folderop = 'disableSharedFolders '
     else:
-        json = '{"code": 500, "message": "The op name is not supported."}'
+        # TODO: Correct the processing here for invalid value
+        # output = '{"code": 500, "message": "The op name is not supported."}'
+        pass
 
     # Run the command
-    code, output = runcmd(folderop + names[id])
+    code, output = runcmd(folderop + names[vmid])
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
         response.body = '{"code": 200, "message": "' + body + '"}'
     elif code == 500:
-        response.body = '{"code": 500, "message": ' + message + '"}'
+        response.body = '{"code": 500, "message": ' + output + '"}'
     else:
         pass
 
@@ -337,18 +351,19 @@ def patch_vms_id_folders(id):
     return response
 
 
-@post('/api/vms/<id>/folders')
-def post_vms_id_folders_id(id):
+@post('/api/vms/<vmid>/folders')
+def post_vms_id_folders_id(vmid):
     # Add a new shared folder
     body = json.load(request.body)
     if {'guestPath', 'hostPath', 'flags'} == set(body):
 
         # Run the command
-        code, output = runcmd('addSharedFolder ' + names[id] + ' ' + body['guestPath'] + ' ' + body['hostPath'])
+        code, output = runcmd('addSharedFolder ' + names[vmid] + ' ' + body['guestPath'] + ' ' + body['hostPath'])
 
         # Check response code from the vmrun procedure & return to caller
         if code == 200:
-            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + '", "flags": 4}'
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' \
+                            + body['hostPath'] + '", "flags": 4}'
         elif code == 500:
             response.body = '{"code": 500, "message": ' + output + '"}'
         else:
@@ -362,22 +377,25 @@ def post_vms_id_folders_id(id):
     return response
 
 
-@get('/api/vms/<id>/folders/<folderid>')
-def get_vms_id_folders_id(id, folderid):
+@get('/api/vms/<vmid>/folders/<folderid>')
+def get_vms_id_folders_id(vmid, folderid):
     # Retrieve shared folders
-    code, output  = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder.maxNum')
+    code, output = runcmd('readVariable ' + names[vmid] + ' runtimeConfig sharedFolder.maxNum')
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
         # Iterate through guestName variables
         if output:
+            j = int(output)
             for i in range(0, j):
-                code, guestPath = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.guestName')
-                if guestPath == folderid:
-                    code, hostPath = runcmd('readVariable ' + names[id] + ' runtimeConfig sharedFolder' + str(i) + '.hostPath')
-                    response.body = '{"guestPath": "' + folderid + '", "hostPath": "' + hostPath + '", "flags": 4}'
+                code, guestpath = runcmd('readVariable ' + names[vmid] + ' runtimeConfig sharedFolder'
+                                         + str(i) + '.guestName')
+                if guestpath == folderid:
+                    code, hostpath = runcmd('readVariable ' + names[vmid] + ' runtimeConfig sharedFolder'
+                                            + str(i) + '.hostPath')
+                    response.body = '{"guestPath": "' + folderid + '", "hostPath": "' + hostpath + '", "flags": 4}'
     elif code == 500:
-        response.body = '{"code": 500, "message": ' + message + '"}'
+        response.body = '{"code": 500, "message": ' + output + '"}'
     else:
         pass
 
@@ -386,21 +404,22 @@ def get_vms_id_folders_id(id, folderid):
     return response
 
 
-@patch('/api/vms/<id>/folders/<folderid>')
-def patch_vms_id_folders_id(id, folderid):
+@patch('/api/vms/<vmid>/folders/<folderid>')
+def patch_vms_id_folders_id(vmid, folderid):
     # Modify a shared folder
     body = json.load(request.body)
     if {'guestPath', 'hostPath', 'flags'} == set(body):
 
         # Run the command
-        code, output = runcmd('setSharedFolderState ' + names[id] + ' ' + body['guestPath']
+        code, output = runcmd('setSharedFolderState ' + names[vmid] + ' ' + body['guestPath']
                               + ' ' + body['hostPath'] + ' writeable')
 
         # Check response code from the vmrun procedure & return to caller
         if code == 200:
-            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "' + body['hostPath'] + '", "flags": 4}'
+            response.body = '{"guestPath": "' + body['guestPath'] + '", "hostPath": "'\
+                            + body['hostPath'] + '", "flags": 4}'
         elif code == 500:
-            response.body = '{"code": 500, "message": ' + message + '"}'
+            response.body = '{"code": 500, "message": ' + folderid + ' ' + output + '"}'
         else:
             pass
         response.status = code
@@ -412,19 +431,18 @@ def patch_vms_id_folders_id(id, folderid):
     return response
 
 
-
-@delete('/api/vms/<id>/folders/<folderid>')
-def delete_vms_id_folders_id(id, folderid):
+@delete('/api/vms/<vmid>/folders/<folderid>')
+def delete_vms_id_folders_id(vmid, folderid):
     # Delete a shared folder
 
     # Run the command
-    code, output = runcmd('removeSharedFolder ' + names[id] + ' ' + folderid)
+    code, output = runcmd('removeSharedFolder ' + names[vmid] + ' ' + folderid)
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
         code = 204
     elif code == 500:
-        response.body = '{"code": 500, "message": ' + message + '"}'
+        response.body = '{"code": 500, "message": ' + output + '"}'
     else:
         pass
 
@@ -433,11 +451,11 @@ def delete_vms_id_folders_id(id, folderid):
     return response
 
 
-@get('/api/vms/<id>/ipaddress')
-def get_vms_getipaddress(id):
+@get('/api/vms/<vmid>/ipaddress')
+def get_vms_getipaddress(vmid):
 
     # Run the command
-    code, output = runcmd('getGuestIPAddress ' + names[id] + ' -wait')
+    code, output = runcmd('getGuestIPAddress ' + names[vmid] + ' -wait')
 
     # Check response code from the vmrun procedure & return to caller
     if code == 200:
@@ -465,7 +483,7 @@ def server_swagger(filepath):
 
 
 @error(500)
-def error500(error):
+def error500():
     # Pass back any 500 Internal Server Errors in JSON and not HTML format
     response.status = 500
     response.body = '{"code": 500, "message": "' + error.traceback.splitlines()[-1] + '"}'
@@ -487,13 +505,11 @@ def main():
     global config
     config = ConfigObj(configfile)
     global default_vm_path
-    default_vm_path = config['DEFAULT_VM_PATH'];
+    default_vm_path = config['DEFAULT_VM_PATH']
 
     # Get the VMs from the inventory
     global names
     global vms
-    names = {}
-    vms = {}
 
     with open('vmInventory', 'r') as f:
         names = json.load(f)
@@ -501,7 +517,7 @@ def main():
     # Found VMX file so ensure the 2 dicts:
     # names - folder name --> vmx file path
     # vms   - folder name --> vmx file contents
-    print('AppCatalyst - discovered vms:')
+    print('DsxCatalyst - discovered vms:')
     for name, vmxfile in names.items():
         print(name, vmxfile)
         if isfile(vmxfile):
@@ -527,7 +543,7 @@ def main():
             try:
                 if csl(link_name, source.replace('/', '\\'), flags) == 0:
                     raise ctypes.WinError()
-            except:
+            finally:
                 pass
 
         os.symlink = symlink_ms
