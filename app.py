@@ -38,6 +38,7 @@ __license__ = 'MIT'
 
 VIX_SHAREDFOLDER_WRITE_ACCESS = 4
 
+platform = ''
 names = {}
 vms = {}
 
@@ -73,7 +74,9 @@ def joinpath(folder, filename):
 def runcmd(cmd, strip=True):
 
     # vmrun does not return any exit codes and all errors are in stdout!
-    proc = subprocess.Popen(VMRUN + VMTYPE + cmd, shell=True, stdout=subprocess.PIPE)
+    command = VMRUN + VMTYPE + cmd
+    print('VMRUN Command:', command)
+    proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     stdout = proc.stdout.readlines()
 
     if any("Error" in s for s in stdout):
@@ -86,9 +89,19 @@ def runcmd(cmd, strip=True):
     else:
         output = ''
 
+    print('VMRUN Output:', output)
+
     if strip:
         output = output.replace('\n', '').replace('\r', '')
     return code, output
+
+
+def symlink(src, dest):
+    command = 'mklink /d "' + dest + '" "' + src + '"'
+    print(command)
+    proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+    stdout = proc.stdout.readlines()
+    print(stdout)
 
 
 @get('/api')
@@ -130,7 +143,10 @@ def post_vms():
     output = ''
 
     if 'id' in body:
-        destvmx = joinpath(joinpath(DEFAULT_VM_PATH, body['id']), body['id'] + '.vmx')
+        if 'sourceReference' in body:
+            destvmx = joinpath(joinpath(DEFAULT_VM_PATH, body['id']), os.path.basename(body['sourceReference']))
+        else:
+            destvmx = joinpath(joinpath(DEFAULT_VM_PATH, body['id']), body['id'] + '.vmx')
     else:
         response.body = '{"code": 500, "message": "EOF"}'
         response.body = 500
@@ -141,8 +157,13 @@ def post_vms():
     elif 'sourceReference' in body:
         srcvmx = body['sourceReference']
         try:
-            os.makedirs(joinpath(DEFAULT_VM_PATH, body['id']))
-            os.symlink(srcvmx, destvmx)
+            srcdir = os.path.dirname(srcvmx)
+            destdir = joinpath(DEFAULT_VM_PATH, body['id'])
+            if platform == 'windows':
+                symlink(srcdir, destdir)
+            else:
+                os.makedirs(destdir)
+                os.symlink(srcvmx, destvmx)
             code = 200
         except OSError:
             code = 500
@@ -511,6 +532,7 @@ def main():
     # TODO: Implement a class for the main application to remove globals
 
     # Get the underlying OS for configuration data
+    global platform
     platform = sys.platform
     if platform == 'darwin':
         platform = 'macos'
