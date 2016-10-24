@@ -240,7 +240,7 @@ def del_vms_id(vmid):
         pass
 
     # Remove the relevant dict entries
-    if id in names:
+    if vmid in names:
         del names[vmid]
         del vms[vmid]
 
