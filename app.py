@@ -28,6 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from bottle import run, get, delete, post, patch, request, response, static_file, error
 from configobj import ConfigObj
 from pyvmxdict import VMDict
@@ -55,6 +56,28 @@ if sys.version_info < (2, 7):
     sys.exit(1)
 
 
+def log_date_time_string():
+    """Return the current time formatted for logging."""
+    now = time.time()
+    year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
+    s = "%02d/%3s/%04d %02d:%02d:%02d" % (
+        day, monthname[month], year, hh, mm, ss)
+    return s
+
+
+weekdayname = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+monthname = [None,
+             'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def log_message(format, *args):
+        sys.stderr.write("%s - - [%s] %s\n" %
+                         ('127.0.0.1',
+                          log_date_time_string(),
+                          format%args))
+
 def getstringpath():
     return os.path.dirname(os.path.realpath(sys.argv[0]))
 
@@ -75,7 +98,7 @@ def runcmd(cmd, strip=True):
 
     # vmrun does not return any exit codes and all errors are in stdout!
     command = VMRUN + VMTYPE + cmd
-    print('VMRUN Command:', command)
+    log_message('%s %s', 'VMRUN Command: ', command)
     proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     stdout = proc.stdout.readlines()
 
@@ -89,7 +112,7 @@ def runcmd(cmd, strip=True):
     else:
         output = ''
 
-    print('VMRUN Output:', output)
+        log_message('%s %s', 'VMRUN Output: ', output)
 
     if strip:
         output = output.replace('\n', '').replace('\r', '')
@@ -98,13 +121,22 @@ def runcmd(cmd, strip=True):
 
 def symlink(src, dest):
     command = 'mklink /d "' + dest + '" "' + src + '"'
-    print(command)
+    log_message('%s %s', 'Windows creating symlink: ', command)
     proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     stdout = proc.stdout.readlines()
-    print(stdout)
+    log_message('%s %s', 'Windows creating symlink: ', stdout)
 
 
 @get('/api')
+def api():
+
+    # TODO: Return configuration via JSON
+    # Return the API version
+
+    return __version__
+
+
+@get('/api/config')
 def api():
 
     # TODO: Return configuration via HTML template
@@ -531,6 +563,9 @@ def main():
     # TODO: Much of this is not Pythonic and will need more work
     # TODO: Implement a class for the main application to remove globals
 
+    log_message('%s', 'Hello from DSXCatalyst!')
+    log_message('%s', '(c) Dave Parsons 2016')
+
     # Get the underlying OS for configuration data
     global platform
     platform = sys.platform
@@ -541,7 +576,7 @@ def main():
     elif platform == 'win32':
         platform = 'windows'
     else:
-        print('DSXCatalyst - running on unknown platform')
+        log_message('%s', 'DSXCatalyst - running on unknown platform')
         sys.exit(1)
 
     # Read the appcatalyst.conf file and validate parameters
@@ -549,7 +584,7 @@ def main():
     configfile = joinpath(scriptpath, 'appcatalyst.conf')
 
     if not isfile(configfile):
-        print('DSXCatalyst - appcatalyst.conf not found')
+        log_message('%s', 'DSXCatalyst - appcatalyst.conf not found')
         sys.exit(1)
 
     config = ConfigObj(configfile)
@@ -568,11 +603,11 @@ def main():
     VMRUN = config[platform]['VMRUN']
     VMTYPE = config[platform]['VMTYPE']
 
-    print(DEFAULT_VM_PATH)
-    print(DEFAULT_PARENT_VM_PATH)
-    print(DEFAULT_LOG_PATH)
-    print(PORT)
-    print(VMRUN + VMTYPE)
+    log_message('%s %s', 'DEFAULT_VM_PATH = ' , DEFAULT_VM_PATH)
+    log_message('%s %s', 'DEFAULT_PARENT_VM_PATH = ', DEFAULT_PARENT_VM_PATH)
+    log_message('%s %s', 'DEFAULT_LOG_PATH = ', DEFAULT_LOG_PATH)
+    log_message('%s %s', 'PORT  = ', PORT)
+    log_message('%s %s', 'VMRUN = ', VMRUN + VMTYPE)
 
     # Get the VMs from the inventory
     global names
@@ -591,9 +626,9 @@ def main():
     # Found VMX file so ensure the 2 dicts:
     # names - folder name --> vmx file path
     # vms   - folder name --> vmx file contents
-    print('DsxCatalyst - discovered vms:')
+    log_message('%s', 'DSXCatalyst - discovered vms:')
     for name, vmxfile in names.items():
-        print(name, vmxfile)
+        log_message('%s %s', name, vmxfile)
         if isfile(vmxfile):
             # Read and add guest VMX file to dict
             vmx = VMDict(vmxfile)
